@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>laya · Home Assistant Toolcall</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#161a21; --panel2:#1c212a; --line:#272e3a;
+  --fg:#e6e9ef; --dim:#8b95a7; --accent:#5b9dff; --ok:#3ecf8e; --warn:#ffb020; --err:#ff6b6b;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:light){
+  :root{--bg:#f6f7f9;--panel:#fff;--panel2:#f0f2f5;--line:#dde1e8;--fg:#141821;--dim:#5d6676;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+       padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel);}
+h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
+h1 span{color:var(--dim);font-weight:400}
+.pill{font:11px/1 var(--mono);padding:5px 9px;border-radius:99px;
+      background:var(--panel2);border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.pill b{color:var(--fg);font-weight:600}
+.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+.pill.err{color:var(--err);border-color:color-mix(in srgb,var(--err) 40%,var(--line))}
+.grow{flex:1}
+main{max-width:1180px;margin:0 auto;padding:20px;display:grid;gap:16px;
+     grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+section.full{grid-column:1/-1}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);
+   margin:0 0 12px;font-weight:600}
+textarea,input,select{width:100%;background:var(--panel2);color:var(--fg);
+   border:1px solid var(--line);border-radius:7px;padding:9px 11px;font:inherit}
+textarea{resize:vertical;min-height:70px;font-family:var(--mono);font-size:13px}
+button{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:9px 15px;
+   font:600 13px/1 inherit;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
+button.danger{background:var(--err)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.chip{font-size:12px;padding:5px 10px;border-radius:99px;background:var(--panel2);
+   border:1px solid var(--line);cursor:pointer;color:var(--dim)}
+.chip:hover{color:var(--fg);border-color:var(--accent)}
+pre{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:12px;
+   font:12px/1.55 var(--mono);overflow-x:auto;margin:0;white-space:pre}
+.q{border-top:1px solid var(--line);padding:11px 0}
+.q:first-of-type{border-top:0}
+.qhead{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.qname{font:600 12px/1 var(--mono);color:var(--dim)}
+.qval{font:600 14px/1 inherit}
+.bars{margin-top:7px;display:grid;gap:3px}
+.bar{display:grid;grid-template-columns:130px 1fr 44px;gap:8px;align-items:center;
+   font:11px/1.4 var(--mono);color:var(--dim)}
+.bar .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.track{height:6px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.fill{height:100%;background:var(--accent);border-radius:99px}
+.fill.top{background:var(--ok)}
+.warn{color:var(--warn);font-size:12px;margin-top:8px}
+table{width:100%;border-collapse:collapse;font:12px/1.5 var(--mono)}
+th,td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left;color:var(--dim)}
+th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase}
+.spark{display:flex;align-items:flex-end;gap:1px;height:48px;margin-top:10px}
+.spark div{flex:1;background:var(--accent);opacity:.65;border-radius:1px 1px 0 0;min-height:1px}
+.muted{color:var(--dim);font-size:12px}
+.err{color:var(--err)}
+label.inline{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;
+   color:var(--dim)}
+label.inline input{width:auto}
+details summary{cursor:pointer;color:var(--dim);font-size:12px;
+   text-transform:uppercase;letter-spacing:.8px;font-weight:600}
+details[open] summary{margin-bottom:12px}
+@media (max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>laya <span>→ Home Assistant Toolcall</span></h1>
+  <span class="pill" id="p-status">nicht geladen</span>
+  <span class="pill" id="p-device">device —</span>
+  <span class="pill" id="p-model">checkpoint —</span>
+  <span class="pill" id="p-cat">katalog —</span>
+  <span class="grow"></span>
+  <span class="pill" id="p-fb">Fallback: aus</span>
+  <span class="pill" id="p-ha">HA: nicht verbunden</span>
+</header>
+
+<div id="banner" hidden style="padding:10px 20px;background:var(--panel2);
+     border-bottom:1px solid var(--line);font-size:13px"></div>
+
+<main>
+  <section>
+    <h2>Befehl</h2>
+    <textarea id="cmd" placeholder="z.B. Mach das Licht im Wohnzimmer etwas dunkler"></textarea>
+    <div class="chips" id="examples"></div>
+    <div class="row">
+      <button id="go">Auswerten</button>
+      <select id="model" style="width:auto">
+        <option value="multilingual" selected>multilingual (Default, 12/12)</option>
+        <option value="english">english (7/12 auf Deutsch)</option>
+        <option value="router">Router (automatisch)</option>
+        <option value="typed-decisions">typed-decisions</option>
+      </select>
+      <label class="inline" title="Unter diesem Wert wird eine Rückfrage markiert">
+        Schwelle <input id="thr" type="number" min="0" max="1" step="0.05" value="0.6"
+        style="width:70px"></label>
+    </div>
+    <div class="row" id="timing"></div>
+  </section>
+
+  <section>
+    <h2>Toolcall</h2>
+    <pre id="toolcall">—</pre>
+    <div id="callwarn"></div>
+    <div class="row">
+      <button class="ghost" id="copy">JSON kopieren</button>
+      <button class="danger" id="exec" disabled title="HA-Modus aktivieren">
+        An HA senden</button>
+      <span class="muted" id="execout"></span>
+    </div>
+  </section>
+
+  <section class="full">
+    <h2>Antworten</h2>
+    <div id="answers" class="muted">Noch kein Ergebnis.</div>
+  </section>
+
+  <section class="full">
+    <h2>Performance</h2>
+    <div class="row">
+      <button id="bench">Benchmark starten</button>
+      <label class="inline">Runs <input id="runs" type="number" value="30" min="1" max="200"
+        style="width:70px"></label>
+      <label class="inline">Warmup <input id="warm" type="number" value="3" min="0" max="20"
+        style="width:70px"></label>
+      <label class="inline"><input id="benchmix" type="checkbox" checked>
+        Beispielmix statt aktuellem Befehl</label>
+      <span class="muted" id="benchstat"></span>
+    </div>
+    <div id="benchout"></div>
+  </section>
+
+  <section class="full">
+    <h2>Sprachassistent-Endpunkt <span class="muted">OpenAI-kompatibel</span></h2>
+    <div class="row">
+      <code class="pill" id="oai-url">—</code>
+      <span class="muted">In Home Assistant als OpenAI-conversation-Integration
+        eintragen, Modell <b>laya</b>, API-Key beliebig.</span>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <label class="inline"><input id="fbon" type="checkbox"> Ollama als Rückfallebene</label>
+      <input id="fburl" placeholder="http://localhost:11434" style="flex:1;min-width:180px">
+      <select id="fbmodel" style="width:auto;min-width:160px"><option value="">— Modell —</option></select>
+      <button class="ghost" id="fbload">Modelle laden</button>
+      <label class="inline">Schwelle
+        <input id="fbthr" type="number" min="0" max="1" step="0.05" value="0.6" style="width:70px">
+      </label>
+      <button class="ghost" id="fbsave">Übernehmen</button>
+      <span class="muted" id="fbmsg"></span>
+    </div>
+    <div class="muted" style="margin-top:8px">
+      Unterhalb der Schwelle — oder wenn die Aktion kein Intent-Gegenstück hat —
+      geht die unveränderte Anfrage an Ollama.
+    </div>
+    <div class="row" style="margin-top:14px">
+      <label class="inline">Kontext an laya
+        <input id="ctxn" type="number" min="0" max="8" step="1" value="2" style="width:70px">
+      </label>
+      <span class="muted">frühere Äußerungen aus der HA-Unterhaltung
+        (0 = nur der aktuelle Befehl)</span>
+      <button class="ghost" id="ctxsave">Übernehmen</button>
+      <span class="muted" id="ctxmsg"></span>
+    </div>
+    <div class="muted" style="margin-top:8px">
+      Gezählt wird in Einträgen, nicht in Runden: Frage und Antwort sind zwei.
+      Jeder Eintrag wird auf 120 Zeichen gekürzt — laya hat für den State nur
+      etwa 320 Token, und der Befehl selbst soll nicht herausfallen.
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="ghost" id="oaitest">Endpunkt testen</button>
+      <span class="muted">simuliert eine HA-Anfrage mit HassTurnOn/HassTurnOff/HassLightSet</span>
+    </div>
+    <pre id="oaiout" style="margin-top:10px">—</pre>
+    <h2 style="margin-top:18px">Letzte Entscheidungen</h2>
+    <div id="trace" class="muted">Noch nichts über /v1 gelaufen.</div>
+  </section>
+
+  <section class="full">
+    <details>
+      <summary>Home Assistant verbinden &amp; Schema</summary>
+      <div class="row">
+        <input id="haurl" placeholder="http://homeassistant.local:8123" style="flex:1;min-width:220px">
+        <input id="hatok" type="password" placeholder="Long-Lived Access Token"
+               style="flex:1;min-width:220px">
+        <button class="ghost" id="haconn">Katalog laden</button>
+        <label class="inline" title="Schreibt den Token nach webui/config.json (nur für dich lesbar)">
+          <input id="hasave" type="checkbox"> Token speichern</label>
+        <label class="inline"><input id="hamode" type="checkbox"> HA-Modus (wirklich schalten)</label>
+      </div>
+      <div class="muted" id="hamsg"></div>
+      <div class="row" style="margin-top:14px">
+        <span class="muted">Entity-Katalog (JSON) — bestimmt die <code>device</code>-Optionen:</span>
+      </div>
+      <textarea id="cat" style="min-height:190px"></textarea>
+      <div class="row">
+        <button class="ghost" id="catsave">Katalog übernehmen</button>
+        <button class="ghost" id="catreset">Zurücksetzen</button>
+        <span class="muted" id="catmsg"></span>
+      </div>
+    </details>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const EXAMPLES = [
+  "Mach das Licht im Wohnzimmer an",
+  "Schalte die Kaffeemaschine ein",
+  "Dimm die Schreibtischlampe auf die Hälfte",
+  "Im Schlafzimmer ist es zu kalt, stell die Heizung wärmer",
+  "Fahr den Rollladen im Wohnzimmer runter",
+  "Turn off the TV in the living room",
+  "Ist die Haustür abgeschlossen?",
+  "Starte den Staubsauger",
+];
+let LAST = null, DEFAULT_CAT = null;
+
+function fmt(n, d=1){ return n==null ? "—" : Number(n).toFixed(d); }
+
+async function api(path, body){
+  const opt = body ? {method:"POST", headers:{"Content-Type":"application/json"},
+                      body:JSON.stringify(body)} : {};
+  const r = await fetch(path, opt);
+  const j = await r.json();
+  if(!r.ok) throw new Error(j.error || ("HTTP "+r.status));
+  return j;
+}
+
+function pill(id, text, cls){
+  const el = $(id); el.textContent = text;
+  el.className = "pill" + (cls ? " "+cls : "");
+}
+
+function banner(text, tone){
+  const el = $("#banner");
+  if(!text){ el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = text;
+  el.style.color = tone === "err" ? "var(--err)"
+                 : tone === "warn" ? "var(--warn)" : "var(--dim)";
+}
+
+async function health(){
+  try{
+    const h = await api("/api/health");
+    pill("#p-status", h.loading ? "lädt…" : h.loaded ? "geladen" : "nicht geladen",
+         h.loaded ? "ok" : "");
+    // Waehrend des Ladens blockiert jede Anfrage bis zu drei Minuten -- das sagen
+    // wir lieber, statt den Nutzer in einen haengenden Klick laufen zu lassen.
+    $("#go").disabled = h.loading;
+    $("#bench").disabled = h.loading;
+    if(h.loading){
+      banner("⏳ Checkpoint wird geladen — das dauert rund drei Minuten. "
+             + "Die Seite ist erreichbar, Auswerten wird danach freigeschaltet.", "warn");
+    } else if(!h.loaded){
+      banner("Modell noch nicht geladen — es kommt mit dem ersten Auswerten.", "warn");
+    } else {
+      banner("");
+    }
+    pill("#p-device", "device " + (h.device_actual || h.device_requested || "auto"));
+    pill("#p-model", "ckpt " + (h.checkpoints.length ? h.checkpoints.join(", ") : "—"));
+    pill("#p-cat", h.entities + " entities · " + h.areas + " räume");
+    pill("#p-ha", h.ha_configured ? "HA: verbunden" : "HA: nicht verbunden",
+         h.ha_configured ? "ok" : "");
+    if(h.ha_url && !$("#haurl").value) $("#haurl").value = h.ha_url;
+    if(h.save_token) $("#hasave").checked = true;
+    pill("#p-fb", h.fallback && h.fallback.enabled
+         ? "Fallback: " + h.fallback.model : "Fallback: aus",
+         h.fallback && h.fallback.enabled ? "ok" : "");
+  }catch(e){
+    pill("#p-status", "Backend weg", "err");
+    banner("⚠ Kein Kontakt zum Server auf " + location.host
+           + " — läuft er noch? Die Seite versucht es alle 8 Sekunden erneut.", "err");
+  }
+}
+
+function renderBars(items, topKey){
+  return `<div class="bars">` + items.map(([k,v]) =>
+    `<div class="bar"><span class="t" title="${k}">${k}</span>
+      <span class="track"><span class="fill${k===topKey?" top":""}"
+        style="width:${(v*100).toFixed(1)}%"></span></span>
+      <span>${(v*100).toFixed(1)}%</span></div>`).join("") + `</div>`;
+}
+
+function renderAnswers(ans){
+  const out = [];
+  for(const [qid, a] of Object.entries(ans)){
+    let val = "", bars = "";
+    if(a.type === "choice"){
+      val = a.choice;
+      const top = Object.entries(a.probabilities).sort((x,y)=>y[1]-x[1]).slice(0,6);
+      bars = renderBars(top, a.choice);
+    } else if(a.type === "score"){
+      val = fmt(a.score,2) + " · " + (a.legend[String(Math.round(a.score))] || "");
+      bars = renderBars(Object.entries(a.probabilities).map(([i,p])=>[a.legend[i]||i, p]),
+                        a.legend[String(Math.round(a.score))]);
+    } else {
+      val = (a.noul*100).toFixed(1) + "%";
+      bars = renderBars([["ja", a.noul], ["nein", 1-a.noul]], a.noul>0.5?"ja":"nein");
+    }
+    out.push(`<div class="q"><div class="qhead"><span class="qname">${qid}</span>
+      <span class="qval">${val}</span>
+      <span class="qname">conf ${fmt(a.confidence,2)}</span></div>${bars}</div>`);
+  }
+  $("#answers").innerHTML = out.join("");
+}
+
+function renderTiming(t, routing, usage, device){
+  $("#timing").innerHTML = [
+    `<span class="pill"><b>${fmt(t.total_ms)} ms</b> total</span>`,
+    `<span class="pill">forward <b>${fmt(t.infer_ms)} ms</b></span>`,
+    `<span class="pill">routing <b>${fmt(t.route_ms,2)} ms</b></span>`,
+    `<span class="pill">→ <b>${routing.model}</b></span>`,
+    `<span class="pill">${usage.input_tokens} tok · ${device}</span>`,
+  ].join("");
+  if(routing.reason) $("#timing").innerHTML +=
+    `<div class="muted" style="width:100%">${routing.reason}</div>`;
+}
+
+async function run(){
+  const text = $("#cmd").value.trim();
+  if(!text) return;
+  $("#go").disabled = true; $("#toolcall").textContent = "…";
+  try{
+    const r = await api("/api/predict", {text, model:$("#model").value,
+                                         threshold:parseFloat($("#thr").value)});
+    LAST = r;
+    $("#toolcall").textContent = JSON.stringify(r.toolcall, null, 2);
+    $("#callwarn").innerHTML = (r.toolcall.warnings||[]).map(w=>
+      `<div class="warn">⚠ ${w}</div>`).join("");
+    renderAnswers(r.answers);
+    renderTiming(r.timing, r.routing, r.usage, r.device);
+    $("#exec").disabled = !($("#hamode").checked && r.toolcall.domain);
+    health();
+  }catch(e){
+    $("#toolcall").textContent = "Fehler: " + e.message;
+  }finally{ $("#go").disabled = false; }
+}
+
+async function bench(){
+  const texts = $("#benchmix").checked ? EXAMPLES
+              : [$("#cmd").value.trim() || EXAMPLES[0]];
+  $("#bench").disabled = true; $("#benchstat").textContent = "läuft…";
+  try{
+    const b = await api("/api/bench", {texts, runs:+$("#runs").value,
+      warmup:+$("#warm").value, model:$("#model").value});
+    const max = Math.max(...b.samples);
+    $("#benchout").innerHTML = `
+      <table>
+        <tr><th>Metrik</th><th>min</th><th>p50</th><th>mean</th><th>p95</th><th>p99</th><th>max</th></tr>
+        <tr><td>total ms</td><td>${b.total.min}</td><td>${b.total.p50}</td>
+            <td>${b.total.mean}</td><td>${b.total.p95}</td><td>${b.total.p99}</td>
+            <td>${b.total.max}</td></tr>
+        <tr><td>forward ms</td><td>—</td><td>—</td><td>${b.infer.mean}</td>
+            <td>${b.infer.p95}</td><td>—</td><td>—</td></tr>
+        <tr><td>routing ms</td><td>—</td><td>—</td><td>${b.route.mean}</td>
+            <td>${b.route.p95}</td><td>—</td><td>—</td></tr>
+      </table>
+      <div class="row">
+        <span class="pill"><b>${b.qps}</b> req/s</span>
+        <span class="pill"><b>${b.decisions_per_s}</b> entscheidungen/s</span>
+        <span class="pill">${b.questions} fragen/pass</span>
+        <span class="pill">σ ${b.total.stdev} ms</span>
+        <span class="pill">${b.tokens.mean} tok ø</span>
+        <span class="pill">${b.device}</span>
+        <span class="pill">${Object.entries(b.per_model).map(([k,v])=>k+"×"+v).join(" · ")}</span>
+      </div>
+      <div class="spark">${b.samples.map(s=>
+        `<div style="height:${Math.max(2,(s/max*100)).toFixed(1)}%" title="${s} ms"></div>`
+      ).join("")}</div>
+      <div class="muted">${b.runs} läufe in ${b.wall_s}s (nach ${b.warmup} warmup)</div>`;
+    $("#benchstat").textContent = "";
+  }catch(e){ $("#benchstat").innerHTML = `<span class="err">${e.message}</span>`; }
+  finally{ $("#bench").disabled = false; }
+}
+
+async function loadCatalog(){
+  try{
+    const s = await api("/api/schema");
+    DEFAULT_CAT = DEFAULT_CAT ||
+      JSON.stringify({entities:s.entities, areas:s.areas}, null, 2);
+    $("#cat").value = JSON.stringify({entities:s.entities, areas:s.areas}, null, 2);
+  }catch(e){ /* Server noch nicht da -- health() meldet es bereits */ }
+}
+
+$("#go").onclick = run;
+$("#cmd").onkeydown = e => { if(e.key==="Enter" && (e.metaKey||e.ctrlKey)) run(); };
+$("#bench").onclick = bench;
+$("#copy").onclick = () => LAST && navigator.clipboard.writeText(
+  JSON.stringify(LAST.toolcall, null, 2));
+$("#hamode").onchange = () =>
+  $("#exec").disabled = !($("#hamode").checked && LAST && LAST.toolcall.domain);
+$("#exec").onclick = async () => {
+  if(!LAST) return;
+  const c = LAST.toolcall;
+  if(!confirm(`Wirklich ausführen?\n\n${c.domain}.${c.service}\n`
+      + JSON.stringify({...c.target, ...c.data}, null, 2))) return;
+  $("#exec").disabled = true; $("#execout").textContent = "sende…";
+  try{
+    const r = await api("/api/ha/execute", {toolcall:c});
+    $("#execout").innerHTML = `<span style="color:var(--ok)">✓ ${r.mode} ok</span>`;
+  }catch(e){ $("#execout").innerHTML = `<span class="err">${e.message}</span>`; }
+  finally{ $("#exec").disabled = false; }
+};
+$("#haconn").onclick = async () => {
+  $("#hamsg").textContent = "verbinde…";
+  try{
+    const r = await api("/api/ha/connect", {url:$("#haurl").value,
+      token:$("#hatok").value, save_token:$("#hasave").checked});
+    $("#hamsg").textContent = `✓ ${r.entities} entities, ${r.areas} bereiche übernommen`
+      + (r.assist_filter ? ` · nur Assist-freigegeben${r.mit_alias ? `, ${r.mit_alias} mit Alias` : ""}`
+                         : " · ungefiltert")
+      + (r.token_gespeichert ? " · Token gespeichert" : "");
+    if(r.warnung) $("#hamsg").innerHTML += `<br><span class="err">${r.warnung}</span>`;
+    if(r.nicht_ansprechbar && r.nicht_ansprechbar.length)
+      $("#hamsg").innerHTML += `<br><span class="err">HA findet diese Entitäten `
+        + `nicht über ihren Namen — in HA einen Alias vergeben: `
+        + `${r.nicht_ansprechbar.join(", ")}</span>`;
+    await loadCatalog(); health();
+  }catch(e){ $("#hamsg").innerHTML = `<span class="err">${e.message}</span>`; }
+};
+$("#catsave").onclick = async () => {
+  try{
+    const parsed = JSON.parse($("#cat").value);
+    const r = await api("/api/schema", parsed);
+    $("#catmsg").textContent = `✓ ${r.entities} entities aktiv`; health();
+  }catch(e){ $("#catmsg").innerHTML = `<span class="err">${e.message}</span>`; }
+};
+$("#catreset").onclick = () => { if(DEFAULT_CAT) $("#cat").value = DEFAULT_CAT; };
+
+const HA_TOOLS = [
+  {type:"function", function:{name:"HassTurnOn", description:"Gerät einschalten",
+    parameters:{type:"object", properties:{name:{type:"string"}, area:{type:"string"},
+      domain:{type:"string"}}}}},
+  {type:"function", function:{name:"HassTurnOff", description:"Gerät ausschalten",
+    parameters:{type:"object", properties:{name:{type:"string"}, area:{type:"string"},
+      domain:{type:"string"}}}}},
+  {type:"function", function:{name:"HassLightSet", description:"Helligkeit setzen",
+    parameters:{type:"object", properties:{name:{type:"string"}, area:{type:"string"},
+      brightness:{type:"integer"}}, required:["brightness"]}}},
+  {type:"function", function:{name:"HassClimateSetTemperature", description:"Temperatur setzen",
+    parameters:{type:"object", properties:{name:{type:"string"}, area:{type:"string"},
+      temperature:{type:"number"}}, required:["temperature"]}}},
+  {type:"function", function:{name:"HassGetState", description:"Zustand abfragen",
+    parameters:{type:"object", properties:{name:{type:"string"}, area:{type:"string"},
+      domain:{type:"string"}}}}},
+];
+
+async function fbLoad(quiet){
+  if(!quiet) $("#fbmsg").textContent = "lade…";
+  try{
+    const r = await api("/api/fallback/models");
+    const sel = $("#fbmodel"), cur = sel.value;
+    sel.innerHTML = `<option value="">— Modell —</option>` +
+      r.models.map(m=>`<option value="${m}">${m}</option>`).join("");
+    sel.value = cur;
+    if(!quiet) $("#fbmsg").textContent = `${r.models.length} Modelle`;
+  }catch(e){
+    // Beim automatischen Laden still bleiben: ohne laufendes Ollama ist das
+    // kein Fehler, den der Nutzer sehen muss.
+    if(!quiet) $("#fbmsg").innerHTML = `<span class="err">${e.message}</span>`;
+  }
+}
+
+async function fbSave(){
+  try{
+    const r = await api("/api/fallback", {enabled:$("#fbon").checked,
+      url:$("#fburl").value, model:$("#fbmodel").value,
+      threshold:parseFloat($("#fbthr").value)});
+    $("#fbmsg").textContent = r.enabled ? `aktiv: ${r.model}` : "aus";
+    health();
+  }catch(e){ $("#fbmsg").innerHTML = `<span class="err">${e.message}</span>`; }
+}
+
+async function fbInit(){
+  ctxLoad();
+  try{
+    const r = await api("/api/fallback");
+    $("#fbon").checked = r.enabled; $("#fburl").value = r.url;
+    $("#fbthr").value = r.threshold;
+    if(r.model){
+      $("#fbmodel").innerHTML = `<option value="${r.model}">${r.model}</option>`;
+      $("#fbmodel").value = r.model;
+    }
+    await fbLoad(true);          // Liste gleich fuellen, Auswahl bleibt stehen
+    if(r.model) $("#fbmodel").value = r.model;
+  }catch(e){}
+}
+
+async function oaiTest(){
+  const text = $("#cmd").value.trim() || EXAMPLES[0];
+  $("#oaiout").textContent = "…";
+  try{
+    const r = await fetch("/v1/chat/completions", {method:"POST",
+      headers:{"Content-Type":"application/json", "Authorization":"Bearer test"},
+      body:JSON.stringify({model:"laya", tools:HA_TOOLS,
+        messages:[{role:"system",content:"Du steuerst ein Smart Home."},
+                  {role:"user",content:text}]})});
+    const j = await r.json();
+    $("#oaiout").textContent = JSON.stringify(j, null, 2);
+    loadTrace();
+  }catch(e){ $("#oaiout").textContent = "Fehler: " + e.message; }
+}
+
+async function loadTrace(){
+  try{
+    const r = await api("/api/trace");
+    if(!r.trace.length) return;
+    $("#trace").innerHTML = `<table>
+      <tr><th>Befehl</th><th>Kontext</th><th>Weg</th><th>Tool</th><th>Argumente</th><th>ms</th></tr>` +
+      r.trace.map(t=>`<tr>
+        <td>${(t.text||"").slice(0,42)}</td>
+        <td title="${(t.kontext||[]).map(k=>`${k.rolle}: ${k.text}`).join(" | ")
+          .replace(/"/g,"&quot;")}">${(t.kontext||[]).length||"—"}</td>
+        <td style="color:${t.route==="laya"?"var(--ok)":t.route==="ollama"?"var(--accent)":"var(--warn)"}">${t.route}</td>
+        <td>${t.tool||"—"}</td>
+        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${(t.args||"").toString().slice(0,60)}</td>
+        <td>${t.ms??"—"}</td></tr>`).join("") + `</table>
+      <div class="muted" style="margin-top:6px">${r.trace[0].reason||""}</div>`;
+  }catch(e){}
+}
+
+async function ctxLoad(){
+  try{
+    const r = await api("/api/context");
+    $("#ctxn").value = r.entries; $("#ctxn").max = r.max;
+  }catch(e){}
+}
+
+$("#ctxsave").onclick = async () => {
+  try{
+    const r = await api("/api/context", {entries: parseInt($("#ctxn").value, 10)});
+    $("#ctxn").value = r.entries;
+    $("#ctxmsg").textContent = r.entries
+      ? `✓ ${r.entries} Einträge gehen mit` : "✓ aus — nur der aktuelle Befehl";
+  }catch(e){ $("#ctxmsg").innerHTML = `<span class="err">${e.message}</span>`; }
+};
+
+$("#fbload").onclick = () => fbLoad(false);
+$("#fbmodel").onchange = () => { if($("#fbon").checked) fbSave(); };
+$("#fbsave").onclick = fbSave;
+$("#oaitest").onclick = oaiTest;
+$("#oai-url").textContent = location.origin + "/v1";
+
+$("#examples").innerHTML = EXAMPLES.map(e=>`<span class="chip">${e}</span>`).join("");
+$("#examples").onclick = e => {
+  if(e.target.classList.contains("chip")){ $("#cmd").value = e.target.textContent; run(); }
+};
+$("#cmd").value = EXAMPLES[0];
+health(); loadCatalog(); fbInit(); loadTrace();
+setInterval(health, 8000); setInterval(loadTrace, 6000);
+</script>
+</body>
+</html>

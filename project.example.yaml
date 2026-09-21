@@ -1,0 +1,32 @@
+# laya-assist-proxy -- Projekteinstellungen
+#
+# Nach project.yaml kopieren, oder einfach die Oberflaeche benutzen: sie schreibt
+# diese Datei bei jeder Aenderung. Der Home-Assistant-Token steht bewusst nicht
+# hier, sondern in secrets.local.json (nur wenn "Token speichern" gesetzt ist).
+
+server:
+  host: 0.0.0.0
+  port: 7788
+  device: null          # null = automatisch (mps, cuda, sonst cpu)
+  preload: true         # Checkpoint beim Start laden, nicht bei der ersten Anfrage
+
+model:
+  default: multilingual
+  threshold: 0.6        # darunter uebernimmt die Rueckfallebene
+
+fallback:
+  enabled: false
+  url: http://localhost:11434
+  model: ''             # z. B. qwen3:8b
+  timeout: 120.0
+
+context:
+  entries: 2            # fruehere Aeusserungen an laya; 0 = aus, Maximum 8
+
+homeassistant:
+  url: ''               # z. B. http://homeassistant.local:8123
+  save_token: false
+
+catalog:                # wird von "Katalog laden" gefuellt
+  areas: {}
+  entities: {}

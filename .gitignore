@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.DS_Store
+
+# Maschinenspezifisch: Home-Assistant-URL und der generierte Entity-Katalog.
+# Wird bei jeder Aenderung neu geschrieben; project.example.yaml zeigt den Aufbau.
+project.yaml
+config.json
+
+# Geheimnisse bleiben lokal
+secrets.local.json
+*.token
+.env
