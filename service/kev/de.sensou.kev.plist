@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>de.sensou.kev</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>/Users/server/Services/kev/start-kev.sh</string>
+	</array>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+
+	<key>ProcessType</key>
+	<string>Standard</string>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>KEV_RUN</key>
+		<string>jaredpalmer/kev-0.8b</string>
+		<key>KEV_PORT</key>
+		<string>8009</string>
+		<key>KEV_DTYPE</key>
+		<string>bf16</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+
+	<key>StandardOutPath</key>
+	<string>/Users/server/Library/Logs/kev.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/server/Library/Logs/kev.err.log</string>
+</dict>
+</plist>

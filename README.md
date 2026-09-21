@@ -127,12 +127,42 @@ Switching to kev is refused while kev does not answer, so a typo in the URL
 cannot silently break voice control. The trace labels each decision with the
 engine that made it.
 
-Worth knowing before expecting a win: kev's models are 0.8B to 9B, orders of
-magnitude larger than laya's, and kev's own README notes that Apple Silicon is
-"currently slow without optimized kernels" and that its "probabilities aren't
-well calibrated on new sources". Calibration is what the confidence threshold
-here is built on, so the threshold likely needs re-tuning for kev. `POST
-/api/bench` measures both under the same questions.
+`service/kev/` has a launchd agent and a start script for running kev
+alongside the proxy.
+
+### Measured against laya
+
+Eight German commands against a 12-entity catalog, `kev-0.8b` on Apple Silicon
+(MPS) versus laya `multilingual` in-process:
+
+| | laya | kev-0.8b |
+|---|---|---|
+| device question | 6/8 | **8/8** |
+| action question | 7/8 | 7/8 |
+| area question | 8/8 | 7/8 |
+| median latency | **204 ms** | 2589 ms |
+
+kev gets right exactly the cases this catalog keeps losing — "Wohnzimmerlicht an"
+0.99 and "Bürolicht aus" 0.99, where laya picks the kitchen light — and it reads
+"mach den bambu aus" as *off* (1.00) where laya says *up* (0.33). It pays about
+13x in latency for that. The first request after start costs ~22 s of warm-up.
+
+Two behavioural differences worth knowing:
+
+* **kev does not resolve pronouns from context.** "mach ihn wieder aus" after
+  "mach den bambu an" is answered `unklar` (0.98), where laya resolves it to the
+  right device. Arguably the more honest answer — it means the fallback takes
+  over rather than a guess being switched — but the context feature buys nothing
+  under kev.
+* **Splitting questions into two calls is free with kev**, unlike the reasoning
+  behind it: cost scales with the number of questions, not the number of
+  requests (4.3 s split vs 4.2 s in one call).
+
+kev's own README notes that Apple Silicon is "currently slow without optimized
+kernels" and that its "probabilities aren't well calibrated on new sources".
+Calibration is what the confidence threshold here rests on, so the threshold
+wants re-tuning for kev. `POST /api/bench` measures both under the same
+questions.
 
 ## Conversation context
 
