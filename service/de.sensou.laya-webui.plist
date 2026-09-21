@@ -2,32 +2,43 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>EnvironmentVariables</key>
-	<dict>
-		<key>PATH</key>
-		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-	</dict>
+	<key>Label</key>
+	<string>de.sensou.laya-webui</string>
+
+	<!-- Die lokale Kopie, nicht die Freigabe: launchd darf von dort nichts
+	     ausfuehren, und beim Booten ist sie noch nicht gemountet.
+	     Stand aktualisieren mit service/deploy.sh. -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>/Users/server/Services/laya-assist-proxy/service/start-laya.sh</string>
+	</array>
+
+	<key>RunAtLoad</key>
+	<true/>
+
 	<key>KeepAlive</key>
 	<dict>
 		<key>SuccessfulExit</key>
 		<false/>
 	</dict>
-	<key>Label</key>
-	<string>de.sensou.laya-webui</string>
+
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+
+	<!-- Nicht Background: das drosselt CPU und GPU, und hier laeuft Inferenz. -->
 	<key>ProcessType</key>
 	<string>Standard</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>/bin/sh</string>
-		<string>/Users/server/Library/Application Support/laya/start-laya.sh</string>
-	</array>
-	<key>RunAtLoad</key>
-	<true/>
-	<key>StandardErrorPath</key>
-	<string>/Users/server/Library/Logs/laya-webui.err.log</string>
+
 	<key>StandardOutPath</key>
 	<string>/Users/server/Library/Logs/laya-webui.log</string>
-	<key>ThrottleInterval</key>
-	<integer>30</integer>
+	<key>StandardErrorPath</key>
+	<string>/Users/server/Library/Logs/laya-webui.err.log</string>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
 </dict>
 </plist>

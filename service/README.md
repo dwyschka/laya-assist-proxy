@@ -1,15 +1,40 @@
-# Running as a service (macOS, launchd)
+# Running it: develop on the share, run on the device
 
-`de.sensou.laya-webui.plist` starts the proxy at login and restarts it if it
-dies. Install:
+The code is edited on the SMB share (`/Volumes/home/laya-assist-proxy`), but the
+service runs from a local copy (`~/Services/laya-assist-proxy`). `deploy.sh`
+moves one to the other and restarts the service:
 
 ```sh
-mkdir -p ~/Library/Application\ Support/laya
-cp service/start-laya.sh ~/Library/Application\ Support/laya/
-chmod +x ~/Library/Application\ Support/laya/start-laya.sh
+./service/deploy.sh                 # copy + restart + wait until ready
+LAYA_ASSIST_TARGET=/some/where ./service/deploy.sh
+```
+
+It reports when the model is loaded, or points at the log if it is not.
+
+**Why copy at all.** Two hard constraints, both found the hard way:
+
+* launchd on this machine may not *execute* a file from the share —
+  `Operation not permitted`, exit 126. The local Python may read the share;
+  launchd may not launch anything from it.
+* A LaunchAgent starts at login, and at that point the share is not mounted yet.
+  Running locally removes the dependency entirely: after a reboot the service
+  comes up whether the share is there or not.
+
+**Configuration belongs to the device, not to the working copy.** `deploy.sh`
+never overwrites `project.yaml`, `secrets.local.json` or `config.json` on the
+target — your catalog, threshold and token survive every deploy. If they are
+missing there (first deploy), they are seeded from the source once.
+
+## Installing the service
+
+```sh
+./service/deploy.sh                                     # creates ~/Services/laya-assist-proxy
 cp service/de.sensou.laya-webui.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.sensou.laya-webui.plist
 ```
+
+The plist points at `~/Services/laya-assist-proxy/service/start-laya.sh`; adjust
+it if you deploy somewhere else.
 
 | command | purpose |
 |---|---|
@@ -19,20 +44,6 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/de.sensou.laya-webui.pli
 
 Logs: `~/Library/Logs/laya-webui.log` and `.err.log`.
 
-## Two things that cost time here
-
-**The start script has to live on local disk.** A launchd job on this machine is
-not allowed to *execute* a file from the SMB share — `Operation not permitted`,
-exit 126. The local Python may read the share, launchd may not launch anything
-from it. For the same reason the plist carries no `WorkingDirectory` pointing at
-the share; the script changes into it itself.
-
-**A LaunchAgent starts at login, not at boot.** Without automatic login, nothing
-runs after a reboot until somebody logs in. A LaunchDaemon would start earlier
-but could not reach the share — it is mounted with the user session. If the share
-is not there yet, the script exits and launchd retries every 30 seconds
-(`ThrottleInterval`) until it appears.
-
 The working directory decides where `project.yaml` and `secrets.local.json` are
-read from (`settings.project_root`), so the script `cd`s into the project before
-starting. `LAYA_ASSIST_HOME` overrides it.
+read from (`settings.project_root`), so `start-laya.sh` `cd`s into the project
+before starting. `LAYA_ASSIST_HOME` overrides it.

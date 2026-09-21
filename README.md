@@ -204,9 +204,22 @@ The token is never in there. It lives in `secrets.local.json` next to it
 
 ## Running as a service
 
-`service/` has a launchd agent for macOS that starts the proxy at login,
-restarts it if it dies, and waits for a network share to appear if the code lives
-on one. See [service/README.md](service/README.md).
+`service/` has a launchd agent for macOS that starts the proxy at login and
+restarts it if it dies.
+
+The setup it is written for: **edit on a network share, run from a local copy.**
+`service/deploy.sh` copies the working state onto the device and restarts the
+service — without touching `project.yaml` or `secrets.local.json` there, which
+belong to the device and not to the working copy.
+
+```sh
+./service/deploy.sh
+```
+
+That is not a detour, it is the fix for two constraints: launchd may not execute
+a file from a network share, and at login time the share is not mounted yet.
+Running locally makes the service independent of both. See
+[service/README.md](service/README.md).
 
 ## Layout
 
