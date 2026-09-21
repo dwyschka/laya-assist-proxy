@@ -43,6 +43,8 @@ HEADER = """\
 
 DEFAULTS: Dict[str, Any] = {
     "server": {"host": "0.0.0.0", "port": 7788, "device": None, "preload": True},
+    # Wer entscheidet: laya im Prozess oder kev als eigener Server.
+    "engine": {"name": "laya", "url": "http://localhost:8009", "model": "kev-latest"},
     "model": {"default": "multilingual", "threshold": 0.6},
     "fallback": {"enabled": False, "url": "http://localhost:11434",
                  "model": "", "timeout": 120.0},
@@ -116,6 +118,9 @@ def save_token(token: str, allowed: bool):
 
 def to_state(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return {
+        "engine": cfg["engine"]["name"],
+        "kev_url": cfg["engine"]["url"],
+        "kev_model": cfg["engine"]["model"],
         "default_model": cfg["model"]["default"],
         "fb_threshold": float(cfg["model"]["threshold"]),
         "fb_enabled": bool(cfg["fallback"]["enabled"]),
@@ -132,6 +137,8 @@ def to_state(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 def from_state(state: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = {k: dict(v) for k, v in cfg.items()}
+    out["engine"] = {"name": state["engine"], "url": state["kev_url"],
+                     "model": state["kev_model"]}
     out["model"] = {"default": state["default_model"], "threshold": state["fb_threshold"]}
     out["fallback"] = {"enabled": state["fb_enabled"], "url": state["fb_url"],
                        "model": state["fb_model"], "timeout": state["fb_timeout"]}

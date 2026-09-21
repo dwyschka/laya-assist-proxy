@@ -167,6 +167,23 @@ details[open] summary{margin-bottom:12px}
       geht die unveränderte Anfrage an Ollama.
     </div>
     <div class="row" style="margin-top:14px">
+      <label class="inline">Entscheider
+        <select id="eng" style="width:auto;min-width:90px">
+          <option value="laya">laya</option>
+          <option value="kev">kev</option>
+        </select>
+      </label>
+      <input id="kevurl" placeholder="http://localhost:8009" style="width:180px">
+      <input id="kevmodel" placeholder="kev-latest" style="width:130px">
+      <button class="ghost" id="engsave">Übernehmen</button>
+      <span class="muted" id="engmsg"></span>
+    </div>
+    <div class="muted" style="margin-top:8px">
+      laya läuft im Prozess. kev ist ein eigener Server
+      (<code>python -m kev.serve --run jaredpalmer/kev-4b --port 8009</code>) und muss
+      laufen, bevor umgeschaltet werden kann — dieselben Fragen, anderes Modell.
+    </div>
+    <div class="row" style="margin-top:14px">
       <label class="inline">Kontext an laya
         <input id="ctxn" type="number" min="0" max="8" step="1" value="2" style="width:70px">
       </label>
@@ -488,6 +505,7 @@ async function fbSave(){
 
 async function fbInit(){
   ctxLoad();
+  engLoad();
   try{
     const r = await api("/api/fallback");
     $("#fbon").checked = r.enabled; $("#fburl").value = r.url;
@@ -526,13 +544,35 @@ async function loadTrace(){
         <td>${(t.text||"").slice(0,42)}</td>
         <td title="${(t.kontext||[]).map(k=>`${k.rolle}: ${k.text}`).join(" | ")
           .replace(/"/g,"&quot;")}">${(t.kontext||[]).length||"—"}</td>
-        <td style="color:${t.route==="laya"?"var(--ok)":t.route==="ollama"?"var(--accent)":"var(--warn)"}">${t.route}</td>
+        <td style="color:${t.route==="ollama"?"var(--accent)":(t.route==="laya"||t.route==="kev")?"var(--ok)":"var(--warn)"}">${t.route}</td>
         <td>${t.tool||"—"}</td>
         <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${(t.args||"").toString().slice(0,60)}</td>
         <td>${t.ms??"—"}</td></tr>`).join("") + `</table>
       <div class="muted" style="margin-top:6px">${r.trace[0].reason||""}</div>`;
   }catch(e){}
 }
+
+async function engLoad(){
+  try{
+    const r = await api("/api/engine");
+    $("#eng").value = r.engine;
+    $("#kevurl").value = r.kev_url; $("#kevmodel").value = r.kev_model;
+    const st = r.status || {};
+    $("#engmsg").innerHTML = st.loaded
+      ? `<span style="color:var(--ok)">${r.engine} bereit${st.checkpoints && st.checkpoints.length ? " · " + st.checkpoints.join(", ") : ""}</span>`
+      : `<span class="err">${st.error || "nicht bereit"}</span>`;
+  }catch(e){}
+}
+
+$("#engsave").onclick = async () => {
+  $("#engmsg").textContent = "prüfe…";
+  try{
+    const r = await api("/api/engine", {engine:$("#eng").value,
+      kev_url:$("#kevurl").value, kev_model:$("#kevmodel").value});
+    $("#engmsg").textContent = `✓ ${r.engine}`;
+    engLoad(); health();
+  }catch(e){ $("#engmsg").innerHTML = `<span class="err">${e.message}</span>`; }
+};
 
 async function ctxLoad(){
   try{

@@ -94,6 +94,46 @@ there, an alias in Home Assistant is the only fix.
 Supported domains: `light`, `switch`, `climate`, `cover`, `media_player`,
 `lock`, `vacuum`, `fan`, `scene`, `script`.
 
+## Alternative decision engine: kev
+
+[kev](https://github.com/jaredpalmer/kev) is a family of small decision models
+on Qwen, and it answers the *same* typed questions as laya — `choice`, `score`
+and `noul`, with probabilities instead of a label. So the question schema in
+`schema.py` drops into it unchanged, and the proxy can use either engine.
+
+The difference is the shape: laya runs in-process, kev runs as its own server.
+
+```sh
+git clone https://github.com/jaredpalmer/kev.git && cd kev
+uv sync --extra serve
+KEV_DTYPE=bf16 uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009
+```
+
+Then switch in the UI (*Entscheider*), or:
+
+```sh
+curl -X POST localhost:7788/api/engine -H 'content-type: application/json' \
+     -d '{"engine": "kev", "kev_url": "http://localhost:8009"}'
+```
+
+```yaml
+engine:
+  name: laya            # or kev
+  url: http://localhost:8009
+  model: kev-latest
+```
+
+Switching to kev is refused while kev does not answer, so a typo in the URL
+cannot silently break voice control. The trace labels each decision with the
+engine that made it.
+
+Worth knowing before expecting a win: kev's models are 0.8B to 9B, orders of
+magnitude larger than laya's, and kev's own README notes that Apple Silicon is
+"currently slow without optimized kernels" and that its "probabilities aren't
+well calibrated on new sources". Calibration is what the confidence threshold
+here is built on, so the threshold likely needs re-tuning for kev. `POST
+/api/bench` measures both under the same questions.
+
 ## Conversation context
 
 By default laya sees the current command plus the **last 2 utterances** from the

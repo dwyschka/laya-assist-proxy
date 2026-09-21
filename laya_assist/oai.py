@@ -205,7 +205,7 @@ def build_tool_call(answers: Dict[str, Any], toolcall: Dict[str, Any],
 
     kind = toolcall.get("kind")
     if kind not in ("service_call", "query"):
-        return None, "laya liefert keinen ausführbaren Call (%s)" % kind
+        return None, "kein ausführbarer Call (%s)" % kind
 
     conf = toolcall.get("confidence")
     if conf is not None and conf < threshold:
@@ -266,7 +266,7 @@ def build_tool_call(answers: Dict[str, Any], toolcall: Dict[str, Any],
             "type": "function",
             "function": {"name": actual,
                          "arguments": json.dumps(args, ensure_ascii=False)},
-        }, "laya -> %s%s" % (actual, " (über den Raum)" if "area" in args else "")
+        }, "-> %s%s" % (actual, " (über den Raum)" if "area" in args else "")
 
     return None, ("keines der Tools %s wurde angeboten (vorhanden: %s)"
                   % (names, ", ".join(sorted(tools)[:6]) or "keine"))

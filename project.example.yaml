@@ -10,6 +10,11 @@ server:
   device: null          # null = automatisch (mps, cuda, sonst cpu)
   preload: true         # Checkpoint beim Start laden, nicht bei der ersten Anfrage
 
+engine:
+  name: laya            # laya (im Prozess) oder kev (eigener Server)
+  url: http://localhost:8009
+  model: kev-latest
+
 model:
   default: multilingual
   threshold: 0.6        # darunter uebernimmt die Rueckfallebene

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from . import ha
+from . import kev
 from . import oai
 from . import ollama
 from . import schema as hschema
@@ -181,6 +182,9 @@ ENGINE: Engine = None          # in main() gesetzt
 DEFAULT_MODEL = "multilingual"
 
 STATE = {"ctx_entries": 2,
+         "engine": "laya",
+         "kev_url": "http://localhost:8009",
+         "kev_model": "kev-latest",
          "entities": dict(hschema.DEFAULT_ENTITIES),
          "areas": dict(hschema.DEFAULT_AREAS),
          "ha_url": "", "ha_token": "", "default_model": DEFAULT_MODEL,
@@ -236,12 +240,25 @@ def load_config():
 
 # ------------------------------------------------------------------ Handler-Logik
 
+def _engine():
+    """Der Entscheider dieser Anfrage: laya im Prozess oder kev ueber HTTP.
+
+    Beide haben dieselbe predict()-Signatur und liefern dieselbe Antwortform,
+    damit dahinter nichts unterscheiden muss, wer geantwortet hat.
+    """
+    if STATE["engine"] == "kev":
+        return kev.Engine(STATE["kev_url"], STATE["kev_model"],
+                          timeout=STATE["fb_timeout"])
+    return ENGINE
+
+
 def _questions() -> Dict[str, Any]:
     return hschema.build_questions(STATE["entities"], STATE["areas"])
 
 
 def api_health(_: dict) -> dict:
-    info = ENGINE.info()
+    info = _engine().info()
+    info["engine"] = STATE["engine"]
     info["entities"] = len(STATE["entities"])
     info["areas"] = len(STATE["areas"])
     info["ha_configured"] = bool(STATE["ha_url"] and STATE["ha_token"])
@@ -291,8 +308,8 @@ def api_predict(body: dict) -> dict:
     questions = custom if isinstance(custom, dict) and custom else _questions()
 
     ctx = body.get("context") if isinstance(body.get("context"), dict) else None
-    res = ENGINE.predict(text, questions, model=model, context=ctx,
-                         context_for=body.get("context_for"))
+    res = _engine().predict(text, questions, model=model, context=ctx,
+                            context_for=body.get("context_for"))
     out = {"text": text, "answers": res["answers"], "routing": res["routing"],
            "timing": res["timing"], "usage": res["usage"], "device": res["device"]}
     if custom:
@@ -320,7 +337,7 @@ def api_bench(body: dict) -> dict:
     ENGINE.ensure()
 
     for i in range(warmup):
-        ENGINE.predict(texts[i % len(texts)], questions, model=model)
+        _engine().predict(texts[i % len(texts)], questions, model=model)
 
     samples: List[float] = []
     infer: List[float] = []
@@ -329,7 +346,7 @@ def api_bench(body: dict) -> dict:
     per_model: Dict[str, int] = {}
     t_start = time.perf_counter()
     for i in range(runs):
-        r = ENGINE.predict(texts[i % len(texts)], questions, model=model)
+        r = _engine().predict(texts[i % len(texts)], questions, model=model)
         samples.append(r["timing"]["total_ms"])
         infer.append(r["timing"]["infer_ms"])
         route.append(r["timing"]["route_ms"])
@@ -442,6 +459,33 @@ def api_context_set(body: dict) -> dict:
     return api_context_get({})
 
 
+def api_engine_get(_: dict) -> dict:
+    out = {"engine": STATE["engine"], "kev_url": STATE["kev_url"],
+           "kev_model": STATE["kev_model"], "verfuegbar": ["laya", "kev"]}
+    out["status"] = _engine().info()
+    return out
+
+
+def api_engine_set(body: dict) -> dict:
+    """Entscheider umschalten. kev muss dafuer laufen -- wir pruefen es gleich."""
+    if "kev_url" in body:
+        STATE["kev_url"] = (body["kev_url"] or "").strip() or STATE["kev_url"]
+    if "kev_model" in body:
+        STATE["kev_model"] = (body["kev_model"] or "").strip() or STATE["kev_model"]
+    if "engine" in body:
+        want = (body["engine"] or "").strip().lower()
+        if want not in ("laya", "kev"):
+            raise ValueError("engine muss laya oder kev sein")
+        if want == "kev":
+            info = kev.Engine(STATE["kev_url"], STATE["kev_model"]).info()
+            if not info.get("loaded"):
+                raise ValueError("kev antwortet nicht unter %s (%s)"
+                                 % (STATE["kev_url"], info.get("error") or "?"))
+        STATE["engine"] = want
+    save_config()
+    return api_engine_get({})
+
+
 def api_fallback_models(_: dict) -> dict:
     return {"models": ollama.list_models(STATE["fb_url"])}
 
@@ -527,10 +571,11 @@ def api_chat(body: dict) -> dict:
     })
     vorher = oai.history(messages, STATE["ctx_entries"])
     t0 = time.perf_counter()
-    res = ENGINE.predict(text, _questions(), model=STATE["default_model"],
-                         context={"vorher": vorher} if vorher else None,
-                         context_for=hschema.CONTEXT_QUESTIONS,
-                         allow_load=False)
+    res = _engine().predict(text, _questions(),
+                            model=None if STATE["engine"] == "kev" else STATE["default_model"],
+                            context={"vorher": vorher} if vorher else None,
+                            context_for=hschema.CONTEXT_QUESTIONS,
+                            allow_load=False)
     call = hschema.build_toolcall(res["answers"], STATE["entities"],
                                   STATE["fb_threshold"], text, STATE["areas"])
     tool_call, reason = oai.build_tool_call(
@@ -540,10 +585,10 @@ def api_chat(body: dict) -> dict:
 
     if tool_call is not None:
         payload = oai.completion(model_label, content=None, tool_calls=[tool_call],
-                                 extra={"route": "laya", "reason": reason,
+                                 extra={"route": STATE["engine"], "reason": reason,
                                         "ms": round(laya_ms, 1),
                                         "toolcall": call})
-        _note({"t": time.time(), "text": text, "route": "laya", "reason": reason,
+        _note({"t": time.time(), "text": text, "route": STATE["engine"], "reason": reason,
                "ms": round(laya_ms, 1), "offered": sorted(tools), "kontext": vorher,
                "tool": tool_call["function"]["name"],
                "args": tool_call["function"]["arguments"]})
@@ -583,6 +628,8 @@ ROUTES = {
     ("POST", "/api/bench"): api_bench,
     ("POST", "/api/ha/connect"): api_ha_connect,
     ("POST", "/api/ha/execute"): api_ha_execute,
+    ("GET", "/api/engine"): api_engine_get,
+    ("POST", "/api/engine"): api_engine_set,
     ("GET", "/api/context"): api_context_get,
     ("POST", "/api/context"): api_context_set,
     ("GET", "/api/fallback"): api_fallback_get,
