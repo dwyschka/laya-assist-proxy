@@ -14,6 +14,8 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import schema
+
 # laya-Aktion -> Kandidaten-Tools in absteigender Präferenz.
 # Mehrere Namen, weil Home Assistant sie über die Versionen umbenannt hat.
 ACTION_TOOLS: Dict[str, List[str]] = {
@@ -191,8 +193,8 @@ def fit_arguments(fn: Dict[str, Any], candidate: Dict[str, Any]) -> Optional[Dic
 
 def build_tool_call(answers: Dict[str, Any], toolcall: Dict[str, Any],
                     entities: Dict[str, Dict[str, str]], areas: Dict[str, str],
-                    tools: Dict[str, Dict[str, Any]], threshold: float
-                    ) -> Tuple[Optional[Dict[str, Any]], str]:
+                    tools: Dict[str, Dict[str, Any]], threshold: float,
+                    text: str = "") -> Tuple[Optional[Dict[str, Any]], str]:
     """Baut einen OpenAI-Tool-Call aus laya-Antworten.
 
     Rückgabe: (tool_call oder None, Begründung). Die Begründung landet im Log und in
@@ -217,9 +219,18 @@ def build_tool_call(answers: Dict[str, Any], toolcall: Dict[str, Any],
     device_key = answers["device"]["choice"]
     entity = entities.get(device_key)
     area_key = answers["area"]["choice"]
+    area_conf = answers["area"]["confidence"]
 
     candidate: Dict[str, Any] = {}
-    if entity is not None:
+    if entity is not None and _area_statt_geraet(entity, area_key, area_conf,
+                                                 threshold, text, areas):
+        # Die Geraetefrage verwechselt aehnlich benannte Geraete quer durch die
+        # Wohnung, die Bereichsfrage liegt dabei bei 1,00. Nennt der Befehl klar
+        # einen Raum und liegt das gewaehlte Geraet woanders, zielen wir auf
+        # "dieser Typ in diesem Raum" -- das loest Home Assistant selbst auf.
+        candidate["area"] = _area_label(area_key, areas)
+        candidate["domain"] = entity.get("domain")
+    elif entity is not None:
         # Nur der Name. Home Assistant sucht die Schnittmenge aus allen Angaben:
         # ein falsch geratener Bereich laesst den Treffer ins Leere laufen, obwohl
         # der Name allein das Geraet eindeutig benennt. Der Bereich kommt nur zum
@@ -255,10 +266,25 @@ def build_tool_call(answers: Dict[str, Any], toolcall: Dict[str, Any],
             "type": "function",
             "function": {"name": actual,
                          "arguments": json.dumps(args, ensure_ascii=False)},
-        }, "laya -> %s" % actual
+        }, "laya -> %s%s" % (actual, " (über den Raum)" if "area" in args else "")
 
     return None, ("keines der Tools %s wurde angeboten (vorhanden: %s)"
                   % (names, ", ".join(sorted(tools)[:6]) or "keine"))
+
+
+def _area_statt_geraet(entity: Dict[str, Any], area_key: str, area_conf: float,
+                       threshold: float, text: str, areas: Dict[str, str]) -> bool:
+    """Widerspricht das gewaehlte Geraet dem sicher erkannten Raum?
+
+    Nur wenn der Raum im Befehl auch vorkommt -- die Bereichsfrage antwortet
+    sonst auch ohne Anhaltspunkt mit voller Confidence (schema.area_named).
+    """
+    if not area_key or area_key == "unklar" or area_conf < threshold:
+        return False
+    if not schema.area_named(text, area_key, areas):
+        return False
+    eigen = entity.get("area") or ""
+    return bool(eigen) and eigen != area_key
 
 
 def _area_label(key: str, areas: Dict[str, str]) -> str:

@@ -218,11 +218,70 @@ def _same_area_fallback(entities: Dict[str, Dict[str, str]], entity: Dict[str, s
     return None
 
 
+def _fold(text: str) -> str:
+    """Kleinschreibung ohne Umlaute -- fuer den Vergleich Befehl gegen Raumname."""
+    out = text.lower()
+    for a, b in (("ä", "a"), ("ö", "o"), ("ü", "u"), ("ß", "ss"),
+                 ("ae", "a"), ("oe", "o"), ("ue", "u")):
+        out = out.replace(a, b)
+    return out
+
+
+def area_named(text: str, area_key: str, areas: Dict[str, str]) -> bool:
+    """Kommt der Raum im Befehl ueberhaupt vor?
+
+    Ohne diese Pruefung waere die Bereichsfrage gefaehrlich: sie antwortet auch
+    dann mit voller Confidence, wenn gar kein Raum genannt wurde -- "mach den
+    bambu an" ergab "Garten" mit 0,90. Ein Geraet, das der Befehl beim Namen
+    nennt, darf davon nicht ueberstimmt werden. Verglichen wird wortweise und
+    ohne Umlaute, damit "Wohnzimmerlicht" den Bereich "Wohnzimmer" trifft.
+    """
+    if not text:
+        return False
+    hay = _fold(text)
+    label = areas.get(area_key, "") or area_key.replace("_", " ")
+    return any(len(w) > 2 and w in hay for w in _fold(label).split())
+
+
+def area_id_of(entities: Dict[str, Dict[str, str]], area_key: str) -> str:
+    """Echte HA-Area-ID zu unserem Slug -- aus dem Katalog, nicht geraten.
+
+    Unser Slug kommt aus dem Bereichsnamen ("Büro Daniel" -> buero_daniel), HA
+    fuehrt die Area aber unter buro_daniel. Ein Service-Call mit dem Slug ginge
+    ins Leere.
+    """
+    for ent in entities.values():
+        if ent.get("area") == area_key and ent.get("area_id"):
+            return ent["area_id"]
+    return area_key
+
+
+def _area_statt_geraet(entity: Optional[Dict[str, str]], area_key: str,
+                       area_conf: float, threshold: float,
+                       text: str, areas: Dict[str, str]) -> bool:
+    """Widerspricht das gewaehlte Geraet dem sicher erkannten Raum?
+
+    Die Geraetefrage verwechselt aehnlich benannte Geraete quer durch die
+    Wohnung; die Bereichsfrage liegt dabei gemessen bei 1,00. Sagt der Befehl
+    also klar einen Raum und liegt das gewaehlte Geraet in einem anderen, ist
+    "dieser Typ in diesem Raum" die bessere Angabe als ein Geraetename, dem wir
+    nicht trauen.
+    """
+    if entity is None or not area_key or area_key == "unklar":
+        return False
+    if area_conf < threshold or not area_named(text, area_key, areas):
+        return False
+    eigen = entity.get("area") or ""
+    return bool(eigen) and eigen != area_key
+
+
 def build_toolcall(answers: Dict[str, Any],
                    entities: Optional[Dict[str, Dict[str, str]]] = None,
-                   threshold: float = 0.6) -> Dict[str, Any]:
+                   threshold: float = 0.6, text: str = "",
+                   areas: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Uebersetzt laya-Antworten in einen Home-Assistant Service-Call."""
     entities = entities or DEFAULT_ENTITIES
+    areas = areas if areas is not None else DEFAULT_AREAS
     warnings: List[str] = []
 
     action = answers["action"]["choice"]
@@ -268,6 +327,17 @@ def build_toolcall(answers: Dict[str, Any],
 
     domain = entity["domain"]
     service = ACTIONS[action]["services"].get(domain)
+
+    if service is not None and _area_statt_geraet(entity, area_key, area_conf,
+                                                  threshold, text, areas):
+        warnings.append("Gerät %s liegt in %r, genannt wurde %r -- es zählt der Raum"
+                        % (entity["entity_id"], entity.get("area"), area_key))
+        return {
+            "kind": "service_call", "domain": domain, "service": service,
+            "target": {"area_id": area_id_of(entities, area_key)}, "data": {},
+            "warnings": warnings,
+            "confidence": round(min(action_conf, area_conf), 4),
+        }
 
     if service is None:
         # Aktion passt nicht zur Domaene des gewaehlten Geraets -- das passiert, wenn das

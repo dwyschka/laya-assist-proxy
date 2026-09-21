@@ -50,10 +50,52 @@ def _slug(text: str) -> str:
     return "_".join(x for x in "".join(out).split("_") if x) or "entity"
 
 
-def _describe(name: str, aliases: List[str], area_name: str) -> str:
-    """Kriterientext fuer laya: Anzeigename, Aliase, Bereich."""
-    head = ", ".join([name] + [a for a in aliases if a.lower() != name.lower()])
-    return "%s%s" % (head, (" im Bereich %s" % area_name) if area_name else "")
+# Wie ein Mensch das Geraet nennt -- der HA-Anzeigename tut das selten.
+DOMAIN_WORDS = {
+    "light": "Licht", "switch": "Steckdose", "climate": "Heizung",
+    "cover": "Rollladen", "media_player": "Lautsprecher", "lock": "Schloss",
+    "vacuum": "Staubsauger", "fan": "Ventilator", "scene": "Szene",
+    "script": "Skript",
+}
+
+
+def _head(ent: Dict[str, Any], areas: Dict[str, str]) -> str:
+    """Der unterscheidende Teil: Bereich und Geraetetyp, so wie man ihn sagt."""
+    wort = DOMAIN_WORDS.get(ent.get("domain", ""), ent.get("domain", ""))
+    bereich = areas.get(ent.get("area") or "", "")
+    return ("%s %s" % (bereich, wort)).strip()
+
+
+def describe_all(entities: Dict[str, Dict[str, Any]], areas: Dict[str, str]):
+    """Setzt `desc` -- den Text, auf den laya matcht.
+
+    Kurz und vorn das Unterscheidende. Gemessen an neun Befehlen: mit dem vollen
+    HA-Anzeigenamen ("shellyplus1pm-wohnzimmer im Bereich Wohnzimmer") 1 von 7
+    Treffern, mit "Wohnzimmer Licht" plus Aliasen 6 von 9. Der Grund ist die
+    Laenge: laya baut Frage und alle Optionen in 192 Token, und bei einem Dutzend
+    Geraeten wird jede Option hart gekuerzt -- was hinten steht, faellt weg.
+
+    Der Anzeigename kommt nur dann dazu, wenn Bereich und Typ nicht reichen, um
+    zwei Geraete auseinanderzuhalten (zwei Lampen in derselben Kueche).
+    """
+    heads = {key: _head(ent, areas) for key, ent in entities.items()}
+    mehrdeutig = {h for h in heads.values()
+                  if list(heads.values()).count(h) > 1}
+    for key, ent in entities.items():
+        kopf = heads[key]
+        teile = [kopf] if kopf else []
+        for alias in ent.get("aliases") or []:
+            if alias.lower() not in (t.lower() for t in teile):
+                teile.append(alias)
+        name = (ent.get("name") or "").strip()
+        # Der HA-Anzeigename kommt nur dazu, wenn es ohne ihn nicht geht: kein
+        # Alias vergeben und Bereich plus Typ nicht eindeutig. Gemessen an acht
+        # Befehlen mit Aliasen: ohne den Namen 6 Treffer, mit ihm 4 -- er ist
+        # Rauschen, sobald es ein gesprochenes Wort fuer das Geraet gibt.
+        hat_alias = bool(ent.get("aliases"))
+        if name and (not teile or (kopf in mehrdeutig and not hat_alias)):
+            teile.append(name)
+        ent["desc"] = ", ".join(teile) or name or ent["entity_id"]
 
 
 # Jinja-Template, das HA serverseitig rendert. `area_name()` loest die echte
@@ -65,7 +107,8 @@ CATALOG_TEMPLATE = """
   {%- if s.domain in __DOMAINS__ -%}
     {%- set ns.items = ns.items + [{
       'entity_id': s.entity_id, 'name': s.name,
-      'area': area_name(s.entity_id) or '', 'domain': s.domain}] -%}
+      'area': area_name(s.entity_id) or '', 'area_id': area_id(s.entity_id) or '',
+      'domain': s.domain}] -%}
   {%- endif -%}
 {%- endfor -%}
 {{ ns.items | tojson }}
@@ -107,10 +150,15 @@ def fetch_catalog_via_template(base_url: str, token: str, limit: int = 200,
             "entity_id": row["entity_id"],
             "domain": row["domain"],
             "area": area_key,
-            "desc": _describe(name, aliases, area_name),
+            # Die echte HA-Area-ID, nicht unser Slug: "Büro Daniel" wird bei uns
+            # zu buero_daniel, heisst in HA aber buro_daniel. Fuer Service-Calls
+            # mit area_id zaehlt nur die echte.
+            "area_id": (row.get("area_id") or "").strip(),
+            "desc": "",
         }
         if aliases:
             entities[key]["aliases"] = aliases
+    describe_all(entities, areas)
     return entities, areas
 
 
@@ -175,7 +223,8 @@ def fetch_catalog(base_url: str, token: str, limit: int = 200
             "entity_id": eid,
             "domain": domain,
             "area": head,
-            "desc": _describe(name, aliases, ""),
+            "area_id": "",
+            "desc": "",
         }
         if aliases:
             entities[key]["aliases"] = aliases
@@ -187,6 +236,7 @@ def fetch_catalog(base_url: str, token: str, limit: int = 200
     for ent in entities.values():
         if ent["area"] not in areas:
             ent["area"] = ""
+    describe_all(entities, areas)
     info["mit_alias"] = sum(1 for e in entities.values() if e.get("aliases"))
     info["nicht_ansprechbar"] = verify_names(base_url, token, entities)
     return entities, areas, info

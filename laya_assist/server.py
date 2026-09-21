@@ -301,7 +301,8 @@ def api_predict(body: dict) -> dict:
                            "warnings": ["eigenes Frage-Schema -- kein Toolcall gebaut"],
                            "confidence": None}
     else:
-        out["toolcall"] = hschema.build_toolcall(res["answers"], STATE["entities"], threshold)
+        out["toolcall"] = hschema.build_toolcall(res["answers"], STATE["entities"],
+                                                 threshold, text, STATE["areas"])
     return out
 
 
@@ -531,10 +532,10 @@ def api_chat(body: dict) -> dict:
                          context_for=hschema.CONTEXT_QUESTIONS,
                          allow_load=False)
     call = hschema.build_toolcall(res["answers"], STATE["entities"],
-                                  STATE["fb_threshold"])
+                                  STATE["fb_threshold"], text, STATE["areas"])
     tool_call, reason = oai.build_tool_call(
         res["answers"], call, STATE["entities"], STATE["areas"], tools,
-        STATE["fb_threshold"])
+        STATE["fb_threshold"], text)
     laya_ms = (time.perf_counter() - t0) * 1000.0
 
     if tool_call is not None:
