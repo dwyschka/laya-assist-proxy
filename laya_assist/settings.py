@@ -3,17 +3,17 @@
 Zwei Dateien, bewusst getrennt:
 
   project.yaml            maschinenspezifisch: Modellwahl, Schwellen, Katalog,
-                          Ollama-Adresse. Liegt im Projektverzeichnis und ist
+                          Adresse der Rueckfallebene. Liegt im Projektverzeichnis
                           gitignored; project.example.yaml zeigt den Aufbau.
-  secrets.local.json      nur der HA-Token, und auch nur, wenn das Speichern
-                          in der Oberflaeche erlaubt wurde. Ebenfalls gitignored.
+  secrets.local.json      HA-Token und, falls der Endpunkt einen braucht, der
+                          API-Key der Rueckfallebene. Ebenfalls gitignored.
 
 Beim Schreiben geht PyYAML der Kommentarkopf verloren, deshalb wird er bei jedem
 Speichern neu vorangestellt.
 """
 import json
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -74,14 +74,24 @@ def load() -> Dict[str, Any]:
     return cfg
 
 
-def load_token() -> str:
+def load_secrets() -> Dict[str, str]:
+    """Alle Geheimnisse aus secrets.local.json -- HA-Token und API-Key."""
     if not os.path.isfile(SECRETS_PATH):
-        return ""
+        return {}
     try:
         with open(SECRETS_PATH, encoding="utf-8") as f:
-            return (json.load(f) or {}).get("ha_token", "")
+            return {k: v for k, v in (json.load(f) or {}).items()
+                    if isinstance(v, str)}
     except (OSError, json.JSONDecodeError):
-        return ""
+        return {}
+
+
+def load_token() -> str:
+    return load_secrets().get("ha_token", "")
+
+
+def load_fb_api_key() -> str:
+    return load_secrets().get("fb_api_key", "")
 
 
 def _atomic_write(path: str, text: str, mode: int = 0o644):
@@ -100,16 +110,32 @@ def save(cfg: Dict[str, Any]):
         print("  project.yaml nicht schreibbar: %s" % e)
 
 
-def save_token(token: str, allowed: bool):
-    """Token ablegen -- oder die Datei entfernen, wenn das Speichern abgewaehlt wurde."""
+def save_secrets(values: Dict[str, Optional[str]]):
+    """Geheimnisse zusammenfuehren und ablegen.
+
+    Zusammenfuehren, nicht ersetzen: HA-Token und API-Key der Rueckfallebene
+    liegen in derselben Datei, und wer eines davon speichert, soll das andere
+    nicht loeschen. Ein leerer Wert entfernt den Schluessel; bleibt nichts
+    uebrig, verschwindet die Datei.
+    """
+    rest = load_secrets()
+    for key, value in values.items():
+        if value:
+            rest[key] = value
+        else:
+            rest.pop(key, None)
     try:
-        if allowed and token:
-            _atomic_write(SECRETS_PATH,
-                          json.dumps({"ha_token": token}, indent=1), mode=0o600)
+        if rest:
+            _atomic_write(SECRETS_PATH, json.dumps(rest, indent=1), mode=0o600)
         elif os.path.isfile(SECRETS_PATH):
             os.remove(SECRETS_PATH)
     except OSError as e:
         print("  secrets.local.json nicht schreibbar: %s" % e)
+
+
+def save_token(token: str, allowed: bool):
+    """HA-Token ablegen -- oder entfernen, wenn das Speichern abgewaehlt wurde."""
+    save_secrets({"ha_token": token if allowed else None})
 
 
 # ------------------------------------------------------- Abbildung auf den Laufzeitzustand

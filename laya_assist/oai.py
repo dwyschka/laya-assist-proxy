@@ -1,9 +1,9 @@
-"""OpenAI-kompatible Schicht: laya vorn, Ollama als Rückfallebene.
+"""OpenAI-kompatible Schicht: laya vorn, ein LLM als Rückfallebene.
 
 Home Assistant spricht seine Conversation Agents über `/v1/chat/completions` an und
 schickt dabei seine Intent-Tools (`HassTurnOn`, `HassLightSet`, ...) im `tools`-Feld
 mit. Diese Schicht beantwortet einen Befehl mit einem `tool_calls`-Block, wenn laya
-sicher genug ist -- sonst geht die unveränderte Anfrage an Ollama.
+sicher genug ist -- sonst geht die unveränderte Anfrage an die Rückfallebene.
 
 Bewusst defensiv: es wird nur ein Tool aufgerufen, das der Client auch angeboten hat,
 und nur mit Parametern, die in dessen JSON-Schema stehen. So überlebt das Mapping
@@ -198,7 +198,7 @@ def build_tool_call(answers: Dict[str, Any], toolcall: Dict[str, Any],
     """Baut einen OpenAI-Tool-Call aus laya-Antworten.
 
     Rückgabe: (tool_call oder None, Begründung). Die Begründung landet im Log und in
-    der WebUI, damit nachvollziehbar bleibt, warum etwas an Ollama ging.
+    der WebUI, damit nachvollziehbar bleibt, warum etwas an die Rückfallebene ging.
     """
     if not tools:
         return None, "Client hat keine Tools angeboten"

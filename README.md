@@ -43,7 +43,7 @@ device-matching quality depends heavily on how your entities are named — see
    so the mapping survives Home Assistant renaming things between versions.
 4. Below the confidence threshold, or when the action has no intent counterpart,
    the **unchanged** request goes to the fallback LLM (any OpenAI-compatible
-   endpoint; Ollama local or cloud).
+   endpoint — Ollama, Lemonade, anything speaking that protocol).
 5. Home Assistant executes the tool and sends the result back for a sentence to
    speak. After a switching command that is a fixed acknowledgement, with no
    round trip. After a status question the fallback phrases the answer — the
@@ -159,6 +159,35 @@ URL — it talks to api.openai.com only. Use an integration that allows one, e.g
 
 Then create a pipeline under *Settings → Voice assistants* and select that agent.
 
+## The fallback
+
+Anything laya does not decide confidently goes to an LLM — unchanged, with only
+the model field set. The endpoint is **any OpenAI-compatible server** that speaks
+`/chat/completions` and `/models`:
+
+| server | URL to enter |
+|---|---|
+| Ollama | `http://localhost:11434` |
+| Lemonade | `http://localhost:8000/api/v1` |
+| anything else | its base URL |
+
+`/v1` is appended only when the path does not already end in it, so both
+spellings work and nobody has to guess. Model lists come from `/models`; for
+Ollama installations older than its OpenAI route, `/api/tags` is tried as a
+second attempt.
+
+An API key is optional (`Authorization: Bearer`). It is stored in
+`secrets.local.json`, never in `project.yaml`, and the API returns only whether
+one is set — never the key.
+
+```sh
+curl -X POST localhost:7788/api/fallback -H 'content-type: application/json' \
+     -d '{"url": "http://localhost:8000/api/v1", "model": "Qwen3.5-8B-GGUF", "enabled": true}'
+```
+
+Decisions that took this route are labelled `fallback` in the trace, with
+`engine_ms` and `fallback_ms` side by side.
+
 ## Configuration
 
 `project.yaml` holds everything the UI manages — model, threshold, fallback,
@@ -230,7 +259,7 @@ laya_assist/
     ha.py          Home Assistant REST: catalog, service calls, name verification
     ha_ws.py       Home Assistant WebSocket: Assist exposure and voice aliases
     oai.py         the OpenAI-compatible layer: tool calls, context, SSE
-    ollama.py      fallback LLM client
+    fallback.py    the fallback LLM, any OpenAI-compatible endpoint
     settings.py    project.yaml and secrets.local.json
     static/        the web UI, one file
 service/           launchd agent for macOS

@@ -152,8 +152,9 @@ details[open] summary{margin-bottom:12px}
         eintragen, Modell <b>laya</b>, API-Key beliebig.</span>
     </div>
     <div class="row" style="margin-top:14px">
-      <label class="inline"><input id="fbon" type="checkbox"> Ollama als Rückfallebene</label>
+      <label class="inline"><input id="fbon" type="checkbox"> Rückfallebene</label>
       <input id="fburl" placeholder="http://localhost:11434" style="flex:1;min-width:180px">
+      <input id="fbkey" type="password" placeholder="API-Key (optional)" style="width:150px">
       <select id="fbmodel" style="width:auto;min-width:160px"><option value="">— Modell —</option></select>
       <button class="ghost" id="fbload">Modelle laden</button>
       <label class="inline">Schwelle
@@ -164,7 +165,12 @@ details[open] summary{margin-bottom:12px}
     </div>
     <div class="muted" style="margin-top:8px">
       Unterhalb der Schwelle — oder wenn die Aktion kein Intent-Gegenstück hat —
-      geht die unveränderte Anfrage an Ollama.
+      geht die unveränderte Anfrage an die Rückfallebene. Jeder
+      OpenAI-kompatible Endpunkt geht: Ollama <code>http://localhost:11434</code>,
+      Lemonade <code>http://localhost:8000/api/v1</code>. <code>/v1</code> wird
+      angehängt, wenn es fehlt. Der API-Key ist optional und landet in
+      <code>secrets.local.json</code>, nie in <code>project.yaml</code>.
+      <span id="fbend"></span>
     </div>
     <div class="row" style="margin-top:14px">
       <label class="inline">Kontext an laya
@@ -480,7 +486,7 @@ async function fbSave(){
   try{
     const r = await api("/api/fallback", {enabled:$("#fbon").checked,
       url:$("#fburl").value, model:$("#fbmodel").value,
-      threshold:parseFloat($("#fbthr").value)});
+      threshold:parseFloat($("#fbthr").value), api_key:$("#fbkey").value});
     $("#fbmsg").textContent = r.enabled ? `aktiv: ${r.model}` : "aus";
     health();
   }catch(e){ $("#fbmsg").innerHTML = `<span class="err">${e.message}</span>`; }
@@ -492,6 +498,8 @@ async function fbInit(){
     const r = await api("/api/fallback");
     $("#fbon").checked = r.enabled; $("#fburl").value = r.url;
     $("#fbthr").value = r.threshold;
+    $("#fbkey").placeholder = r.api_key_gesetzt ? "API-Key gesetzt" : "API-Key (optional)";
+    $("#fbend").textContent = r.endpunkt ? `Aktuell: ${r.endpunkt}/chat/completions` : "";
     if(r.model){
       $("#fbmodel").innerHTML = `<option value="${r.model}">${r.model}</option>`;
       $("#fbmodel").value = r.model;
@@ -526,7 +534,7 @@ async function loadTrace(){
         <td>${(t.text||"").slice(0,42)}</td>
         <td title="${(t.kontext||[]).map(k=>`${k.rolle}: ${k.text}`).join(" | ")
           .replace(/"/g,"&quot;")}">${(t.kontext||[]).length||"—"}</td>
-        <td style="color:${t.route==="laya"?"var(--ok)":t.route==="ollama"?"var(--accent)":"var(--warn)"}">${t.route}</td>
+        <td style="color:${t.route==="laya"?"var(--ok)":t.route==="fallback"?"var(--accent)":"var(--warn)"}">${t.route}</td>
         <td>${t.tool||"—"}</td>
         <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${(t.args||"").toString().slice(0,60)}</td>
         <td>${t.ms??"—"}</td></tr>`).join("") + `</table>

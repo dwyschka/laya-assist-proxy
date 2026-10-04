@@ -16,9 +16,13 @@ model:
 
 fallback:
   enabled: false
+  # Jeder OpenAI-kompatible Endpunkt: Ollama http://localhost:11434,
+  # Lemonade http://localhost:8000/api/v1. /v1 wird angehaengt, wenn es fehlt.
   url: http://localhost:11434
-  model: ''             # z. B. qwen3:8b
+  model: ''             # z. B. qwen3:8b -- Auswahl per "Modelle laden"
   timeout: 120.0
+  # Ein API-Key, falls der Endpunkt einen braucht, steht NICHT hier, sondern in
+  # secrets.local.json unter "fb_api_key" (die Oberflaeche schreibt ihn dorthin).
 
 context:
   entries: 2            # fruehere Aeusserungen an laya; 0 = aus, Maximum 8

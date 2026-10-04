@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from . import ha
 from . import oai
-from . import ollama
+from . import fallback
 from . import schema as hschema
 from . import settings
 
@@ -181,6 +181,7 @@ ENGINE: Engine = None          # in main() gesetzt
 DEFAULT_MODEL = "multilingual"
 
 STATE = {"ctx_entries": 2,
+         "fb_api_key": "",
          "entities": dict(hschema.DEFAULT_ENTITIES),
          "areas": dict(hschema.DEFAULT_AREAS),
          "ha_url": "", "ha_token": "", "default_model": DEFAULT_MODEL,
@@ -217,6 +218,7 @@ def save_config():
     CONFIG = settings.from_state(STATE, CONFIG or settings.load())
     settings.save(CONFIG)
     settings.save_token(STATE.get("ha_token", ""), STATE.get("save_token", False))
+    settings.save_secrets({"fb_api_key": STATE.get("fb_api_key", "")})
 
 
 def load_config():
@@ -226,6 +228,7 @@ def load_config():
     token = settings.load_token()
     if token:
         STATE["ha_token"] = token
+    STATE["fb_api_key"] = settings.load_fb_api_key()
     if not STATE["entities"]:
         STATE["entities"] = dict(hschema.DEFAULT_ENTITIES)
         STATE["areas"] = dict(hschema.DEFAULT_AREAS)
@@ -409,7 +412,10 @@ def api_ha_execute(body: dict) -> dict:
 def api_fallback_get(_: dict) -> dict:
     return {"enabled": STATE["fb_enabled"], "url": STATE["fb_url"],
             "model": STATE["fb_model"], "threshold": STATE["fb_threshold"],
-            "timeout": STATE["fb_timeout"]}
+            "timeout": STATE["fb_timeout"],
+            # Der Key selbst geht nie zurueck -- nur, ob einer gesetzt ist.
+            "api_key_gesetzt": bool(STATE["fb_api_key"]),
+            "endpunkt": fallback.base_url(STATE["fb_url"])}
 
 
 def api_fallback_set(body: dict) -> dict:
@@ -421,10 +427,12 @@ def api_fallback_set(body: dict) -> dict:
         STATE["fb_threshold"] = max(0.0, min(1.0, float(body["threshold"])))
     if "timeout" in body:
         STATE["fb_timeout"] = max(5.0, min(600.0, float(body["timeout"])))
+    if "api_key" in body:                 # leerer String entfernt ihn
+        STATE["fb_api_key"] = (body["api_key"] or "").strip()
     if "enabled" in body:
         want = bool(body["enabled"])
         if want and not STATE["fb_model"]:
-            raise ValueError("kein Ollama-Modell gewaehlt")
+            raise ValueError("kein Modell fuer die Rueckfallebene gewaehlt")
         STATE["fb_enabled"] = want
     save_config()
     return api_fallback_get({})
@@ -443,7 +451,8 @@ def api_context_set(body: dict) -> dict:
 
 
 def api_fallback_models(_: dict) -> dict:
-    return {"models": ollama.list_models(STATE["fb_url"])}
+    return {"models": fallback.list_models(STATE["fb_url"],
+                                          api_key=STATE["fb_api_key"])}
 
 
 def api_trace(_: dict) -> dict:
@@ -466,7 +475,7 @@ def api_models(_: dict) -> dict:
 
 
 def api_chat(body: dict) -> dict:
-    """OpenAI-kompatibler Endpunkt: laya zuerst, sonst Ollama."""
+    """OpenAI-kompatibler Endpunkt: laya zuerst, sonst die Rueckfallebene."""
     messages = body.get("messages") or []
     if not messages:
         raise ValueError("'messages' fehlt")
@@ -486,21 +495,25 @@ def api_chat(body: dict) -> dict:
         if oai.result_needs_words(messages) and STATE["fb_enabled"] and STATE["fb_model"]:
             t0 = time.perf_counter()
             try:
-                answer = ollama.chat(STATE["fb_url"], STATE["fb_model"], body,
-                                     timeout=STATE["fb_timeout"])
+                answer = fallback.chat(STATE["fb_url"], STATE["fb_model"], body,
+                                       timeout=STATE["fb_timeout"],
+                                       api_key=STATE["fb_api_key"])
                 fb_ms = (time.perf_counter() - t0) * 1000.0
                 said = ((answer.get("choices") or [{}])[0].get("message") or {}
                         ).get("content") or ""
-                answer["laya"] = {"route": "antwort", "reason": "Ollama formuliert "
-                                  "das Tool-Ergebnis", "ollama_ms": round(fb_ms, 1)}
+                answer["laya"] = {"route": "antwort",
+                                  "reason": "Rückfallebene formuliert das "
+                                            "Tool-Ergebnis",
+                                  "fallback_ms": round(fb_ms, 1)}
                 _note({"t": time.time(), "text": "(Tool-Ergebnis)", "route": "antwort",
-                       "reason": "Ollama formuliert das Tool-Ergebnis",
+                       "reason": "Rückfallebene formuliert das Tool-Ergebnis",
                        "ms": round(fb_ms, 1), "tool": ", ".join(oai.answered_tools(messages)),
                        "args": said[:120]})
                 return {"__raw__": answer, "__stream__": stream}
             except RuntimeError as e:
                 _note({"t": time.time(), "text": "(Tool-Ergebnis)", "route": "quittung",
-                       "reason": "Ollama nicht erreichbar (%s) -- feste Quittung" % e})
+                       "reason": "Rückfallebene nicht erreichbar (%s) -- feste "
+                                 "Quittung" % e})
         payload = oai.completion(model_label, content="Erledigt.")
         _note({"t": time.time(), "text": "(Tool-Ergebnis)", "route": "quittung",
                "reason": "Client meldet Tool-Ausfuehrung zurueck",
@@ -560,14 +573,15 @@ def api_chat(body: dict) -> dict:
         return {"__raw__": payload, "__stream__": stream}
 
     t1 = time.perf_counter()
-    answer = ollama.chat(STATE["fb_url"], STATE["fb_model"], body,
-                         timeout=STATE["fb_timeout"])
+    answer = fallback.chat(STATE["fb_url"], STATE["fb_model"], body,
+                           timeout=STATE["fb_timeout"],
+                           api_key=STATE["fb_api_key"])
     fb_ms = (time.perf_counter() - t1) * 1000.0
     answer.setdefault("laya", {})
-    answer["laya"] = {"route": "ollama", "reason": reason,
-                      "laya_ms": round(laya_ms, 1), "ollama_ms": round(fb_ms, 1)}
+    answer["laya"] = {"route": "fallback", "reason": reason,
+                      "engine_ms": round(laya_ms, 1), "fallback_ms": round(fb_ms, 1)}
     ch = (answer.get("choices") or [{}])[0].get("message") or {}
-    _note({"t": time.time(), "text": text, "route": "ollama", "reason": reason,
+    _note({"t": time.time(), "text": text, "route": "fallback", "reason": reason,
            "ms": round(laya_ms + fb_ms, 1), "offered": sorted(tools), "kontext": vorher,
            "tool": (ch.get("tool_calls") or [{}])[0].get("function", {}).get("name"),
            "args": (ch.get("tool_calls") or [{}])[0].get("function", {}).get("arguments")
@@ -685,10 +699,11 @@ def main():
     ap.add_argument("--default-model", default=(cfg.get("model") or {}).get("default",
                                                                DEFAULT_MODEL),
                     help="fester Checkpoint statt Routing; 'router' fuer Auto-Routing")
-    ap.add_argument("--ollama-url",
+    ap.add_argument("--fallback-url", "--ollama-url", dest="fallback_url",
                     default=(cfg.get("fallback") or {}).get("url",
                              "http://localhost:11434"))
-    ap.add_argument("--ollama-model", default="",
+    ap.add_argument("--fallback-model", "--ollama-model", dest="fallback_model",
+                    default="",
                     help="Modell fuer die Rueckfallebene; leer = aus")
     ap.add_argument("--preload", action="store_true",
                     default=bool(srv_cfg.get("preload", True)),
@@ -698,9 +713,9 @@ def main():
 
     load_config()
     STATE["default_model"] = args.default_model
-    STATE["fb_url"] = args.ollama_url
-    if args.ollama_model:                      # nur ein echtes Argument sticht
-        STATE["fb_model"] = args.ollama_model
+    STATE["fb_url"] = args.fallback_url
+    if args.fallback_model:                    # nur ein echtes Argument sticht
+        STATE["fb_model"] = args.fallback_model
         STATE["fb_enabled"] = True
     names = ([args.default_model] if args.default_model in ("english", "multilingual",
                                                             "typed-decisions")
@@ -710,8 +725,9 @@ def main():
     srv = Server((args.host, args.port), Handler)
     print("laya WebUI -> http://%s:%d" % (args.host, args.port))
     print("OpenAI-Endpunkt -> http://%s:%d/v1  (Modell 'laya')" % (args.host, args.port))
-    print("Rueckfallebene  -> %s" % (("%s @ %s" % (args.ollama_model, args.ollama_url))
-                                     if args.ollama_model else "aus"))
+    print("Rueckfallebene  -> %s" % (("%s @ %s" % (STATE["fb_model"],
+                                                   fallback.base_url(STATE["fb_url"])))
+                                     if STATE["fb_model"] else "aus"))
     if args.preload:
         # Im Hintergrund laden, damit die Seite sofort erreichbar ist und anzeigen
         # kann, dass das Modell noch kommt -- sonst sieht ein Neustart drei Minuten
